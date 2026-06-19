@@ -120,9 +120,8 @@ function getSmartMoves(state: GameState): Position[] {
 
   // 후보가 너무 많으면 제한 (성능)
   const candidates = nearMoves.length > 0 ? nearMoves : allMoves;
-  if (candidates.length > 60) {
-    // 우선순위 기반 필터: 활로 관련 + 전략적 위치
-    return prioritizeMoves(state, candidates).slice(0, 60);
+  if (candidates.length > 30) {
+    return prioritizeMoves(state, candidates).slice(0, 30);
   }
 
   return candidates;
@@ -168,7 +167,7 @@ function getNeighbors(pos: Position, size: number): Position[] {
 function simulate(state: GameState): number {
   let current = state;
   let moveCount = 0;
-  const maxMoves = current.boardSize * current.boardSize * 2;
+  const maxMoves = Math.min(current.boardSize * current.boardSize, 120);
 
   while (!current.isGameOver && moveCount < maxMoves) {
     const moves = getPlayoutMoves(current);
@@ -324,15 +323,29 @@ export function mctsSearch(state: GameState, iterations: number): Position | nul
   return bestChild?.move || null;
 }
 
-// 난이도별 시뮬레이션 횟수
+// 난이도별 시뮬레이션 횟수 (모바일 최적화)
 export function getMCTSIterations(difficulty: string, boardSize: number): number {
-  // 보드 크기에 따라 조절
-  const sizeMultiplier = boardSize <= 9 ? 1.5 : boardSize <= 13 ? 1 : 0.7;
-
+  if (boardSize <= 9) {
+    switch (difficulty) {
+      case 'easy': return 80;
+      case 'medium': return 300;
+      case 'hard': return 800;
+      default: return 300;
+    }
+  }
+  if (boardSize <= 13) {
+    switch (difficulty) {
+      case 'easy': return 50;
+      case 'medium': return 200;
+      case 'hard': return 500;
+      default: return 200;
+    }
+  }
+  // 19x19
   switch (difficulty) {
-    case 'easy': return Math.floor(100 * sizeMultiplier);
-    case 'medium': return Math.floor(500 * sizeMultiplier);
-    case 'hard': return Math.floor(2000 * sizeMultiplier);
-    default: return 500;
+    case 'easy': return 30;
+    case 'medium': return 150;
+    case 'hard': return 350;
+    default: return 150;
   }
 }
