@@ -81,7 +81,11 @@ export default function GameReplay({ initialState, onClose }: GameReplayProps) {
           <div className="text-center text-gray-400 text-xs">
             {moves[moveIndex - 1].player === 'black' ? '흑' : '백'}
             {moves[moveIndex - 1].position
-              ? ` - ${String.fromCharCode(65 + (moves[moveIndex - 1].position!.col >= 8 ? moves[moveIndex - 1].position!.col + 1 : moves[moveIndex - 1].position!.col) + 65 - 65)}${initialState.boardSize - moves[moveIndex - 1].position!.row}`
+              ? (() => {
+                  const col = moves[moveIndex - 1].position!.col;
+                  const letters = 'ABCDEFGHJKLMNOPQRST';
+                  return ` - ${letters[col]}${initialState.boardSize - moves[moveIndex - 1].position!.row}`;
+                })()
               : ' - 패스'}
           </div>
         )}

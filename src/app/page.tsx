@@ -62,18 +62,21 @@ export default function Home() {
   const [omokState, setOmokState] = useState<OmokState>(createOmokGame(15));
   const [omokHistory, setOmokHistory] = useState<OmokState[]>([]);
 
-  // ── 타이머 로직 ──
+  // ── 타이머 로직 (플레이어 차례에만 진행) ──
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
 
     if (!timerEnabled || mode !== 'playing' || gameState.isGameOver || gameType !== 'baduk') return;
 
+    // AI 차례에는 타이머 정지
+    const isPlayerTurn = gameState.currentPlayer === playerColor;
+    if (!isPlayerTurn) return;
+
     timerRef.current = setInterval(() => {
-      if (gameState.currentPlayer === 'black') {
+      if (playerColor === 'black') {
         setBlackTime(t => {
           if (t <= 11 && t > 0 && soundEnabled) playTimerWarningSound();
           if (t <= 1) {
-            // 시간 초과 → 패배
             setGameState(prev => ({ ...prev, isGameOver: true, consecutivePasses: 2 }));
             return 0;
           }
@@ -92,7 +95,7 @@ export default function Home() {
     }, 1000);
 
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [timerEnabled, mode, gameState.isGameOver, gameState.currentPlayer, gameType, soundEnabled]);
+  }, [timerEnabled, mode, gameState.isGameOver, gameState.currentPlayer, gameType, soundEnabled, playerColor]);
 
   // ── 바둑 게임 종료 → 사석 처리 단계 ──
   useEffect(() => {
@@ -250,14 +253,27 @@ export default function Home() {
     if (omokState.currentPlayer !== playerColor) return;
     if (!isValidOmokMove(omokState, pos)) return;
 
+    if (confirmModeEnabled) {
+      setPreviewPos(pos);
+      return;
+    }
+    doPlaceOmokStone(pos);
+  };
+
+  const doPlaceOmokStone = (pos: Position) => {
     const newState = placeOmokStone(omokState, pos);
     if (newState) {
       if (soundEnabled) playPlaceSound();
       setOmokHistory(prev => [...prev, omokState]);
       setOmokState(newState);
       setLastMove(pos);
+      setPreviewPos(null);
       if (newState.isGameOver && soundEnabled) playGameEndSound();
     }
+  };
+
+  const handleOmokConfirm = () => {
+    if (previewPos) doPlaceOmokStone(previewPos);
   };
 
   // ── 무르기 ──
@@ -418,7 +434,7 @@ export default function Home() {
   }
 
   if (mode === 'replay' && replayState) {
-    return <GameReplay initialState={replayState} onClose={() => setMode('playing')} />;
+    return <GameReplay initialState={replayState} onClose={() => setMode(gameType === 'omok' ? 'omok' : 'playing')} />;
   }
 
   // ── 메인 메뉴 ──
@@ -687,8 +703,13 @@ export default function Home() {
           <GoBoard
             gameState={omokGameState}
             onPlaceStone={handleOmokPlace}
+            onConfirmMove={handleOmokConfirm}
+            onCancelMove={handleCancelMove}
             lastMove={lastMove}
+            previewPos={previewPos}
             mode="play"
+            confirmMode={confirmModeEnabled}
+            winLine={omokState.winLine}
           />
 
           {/* 오목 상태 */}
@@ -737,6 +758,14 @@ export default function Home() {
                          hover:bg-blue-900/60 active:scale-95 transition-all">
               새 대국
             </button>
+            {omokState.isGameOver && (
+              <button
+                onClick={() => { setReplayState(omokGameState); setMode('replay'); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-indigo-900/40 text-indigo-400
+                           hover:bg-indigo-900/60 active:scale-95 transition-all">
+                리플레이
+              </button>
+            )}
           </div>
         </div>
       </main>

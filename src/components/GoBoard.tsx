@@ -18,6 +18,7 @@ interface GoBoardProps {
   confirmMode?: boolean;
   replayMoveIndex?: number; // 리플레이 시 현재 수순
   displayBoard?: Stone[][]; // 리플레이용 보드
+  winLine?: Position[] | null; // 오목 승리 라인
 }
 
 export default function GoBoard({
@@ -33,6 +34,7 @@ export default function GoBoard({
   confirmMode = false,
   replayMoveIndex,
   displayBoard,
+  winLine,
 }: GoBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -175,8 +177,22 @@ export default function GoBoard({
           ctx.fill();
         }
 
+        // 오목 승리 라인 표시
+        const isWinStone = winLine?.some(w => w.row === r && w.col === c);
+        if (isWinStone) {
+          // 황금 빛 테두리
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 3;
+          ctx.shadowColor = '#fbbf24';
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.arc(x, y, stoneRadius + 2, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+
         // 마지막 수 표시
-        if (lastMove && lastMove.row === r && lastMove.col === c && !isDead) {
+        if (lastMove && lastMove.row === r && lastMove.col === c && !isDead && !isWinStone) {
           ctx.strokeStyle = '#ff4444';
           ctx.lineWidth = 2;
           ctx.beginPath();
@@ -237,7 +253,7 @@ export default function GoBoard({
       ctx.fill();
       ctx.globalAlpha = 1.0;
     }
-  }, [board, boardSize, lastMove, previewPos, deadStones, mode, confirmMode, hoverPos, getCanvasSize, gameState.currentPlayer, replayMoveIndex]);
+  }, [board, boardSize, lastMove, previewPos, deadStones, mode, confirmMode, hoverPos, getCanvasSize, gameState.currentPlayer, replayMoveIndex, winLine]);
 
   useEffect(() => {
     draw();
