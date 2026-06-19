@@ -26,6 +26,8 @@ import {
 import { Difficulty, getAIMove } from '@/lib/ai-engine';
 import { saveRecord } from '@/lib/history';
 import { playPlaceSound, playCaptureSound, playPassSound, playGameEndSound, playTimerWarningSound } from '@/lib/sounds';
+import { estimateTerritory } from '@/lib/territory';
+import { saveGame, loadGame, clearSave, SavedGame } from '@/lib/autosave';
 
 type AppMode = 'menu' | 'playing' | 'history' | 'replay' | 'dead-stone' | 'omok';
 
@@ -50,6 +52,11 @@ export default function Home() {
   const [previewPos, setPreviewPos] = useState<Position | null>(null); // 착수 확인용
   const [deadStones, setDeadStones] = useState<Set<string>>(new Set()); // 사석 처리용
   const [replayState, setReplayState] = useState<GameState | null>(null);
+  const [hintPos, setHintPos] = useState<Position | null>(null);
+  const [showTerritory, setShowTerritory] = useState(false);
+  const [territoryMap, setTerritoryMap] = useState<('black' | 'white' | null)[][] | undefined>();
+  const [lastPlacedAnim, setLastPlacedAnim] = useState<Position | null>(null);
+  const [hasSavedGame, setHasSavedGame] = useState(false);
 
   // ── 타이머 상태 ──
   const [timerEnabled, setTimerEnabled] = useState(false);
@@ -61,6 +68,39 @@ export default function Home() {
   // ── 오목 상태 ──
   const [omokState, setOmokState] = useState<OmokState>(createOmokGame(15));
   const [omokHistory, setOmokHistory] = useState<OmokState[]>([]);
+
+  // ── 이어하기 체크 (최초 마운트) ──
+  useEffect(() => {
+    const saved = loadGame();
+    if (saved && saved.moves.length > 0) {
+      setHasSavedGame(true);
+    }
+  }, []);
+
+  // ── 영역 실시간 업데이트 ──
+  useEffect(() => {
+    if (showTerritory && gameType === 'baduk' && !gameState.isGameOver) {
+      setTerritoryMap(estimateTerritory(gameState.board, gameState.boardSize));
+    } else {
+      setTerritoryMap(undefined);
+    }
+  }, [showTerritory, gameState.board, gameState.boardSize, gameState.isGameOver, gameType]);
+
+  // ── 자동 저장 (바둑 매 수마다) ──
+  useEffect(() => {
+    if (mode === 'playing' && gameType === 'baduk' && !gameState.isGameOver && gameState.moveHistory.length > 0) {
+      saveGame({
+        gameType: 'baduk',
+        difficulty,
+        playerColor: playerColor || 'black',
+        boardSize: gameState.boardSize,
+        moves: gameState.moveHistory
+          .filter(m => m.position)
+          .map(m => ({ row: m.position!.row, col: m.position!.col, player: m.player as string })),
+        timestamp: Date.now(),
+      });
+    }
+  }, [gameState.moveHistory.length, mode, gameType, gameState.isGameOver, difficulty, playerColor, gameState.moveHistory, gameState.boardSize]);
 
   // ── 타이머 로직 (플레이어 차례에만 진행) ──
   useEffect(() => {
@@ -236,6 +276,8 @@ export default function Home() {
       setGameState(newState);
       setLastMove(pos);
       setPreviewPos(null);
+      setHintPos(null);
+      setLastPlacedAnim(pos);
     }
   };
 
@@ -294,6 +336,47 @@ export default function Home() {
       const lastMoveEntry = prev.moveHistory[prev.moveHistory.length - 1];
       setLastMove(lastMoveEntry?.position || null);
     }
+  };
+
+  // ── 힌트 ──
+  const handleHint = () => {
+    if (gameType === 'baduk') {
+      const hint = getAIMove(gameState, 'hard');
+      setHintPos(hint);
+      // 3초 후 힌트 숨기기
+      setTimeout(() => setHintPos(null), 3000);
+    } else {
+      const hint = getOmokAIMove(omokState, 'hard');
+      setHintPos(hint);
+      setTimeout(() => setHintPos(null), 3000);
+    }
+  };
+
+  // ── 이어하기 ──
+  const handleContinueGame = () => {
+    const saved = loadGame();
+    if (!saved) return;
+
+    setDifficulty(saved.difficulty as Difficulty);
+    setPlayerColor(saved.playerColor as Stone);
+    setBoardSize(saved.boardSize);
+    setGameType(saved.gameType);
+
+    if (saved.gameType === 'baduk') {
+      let state = createGame(saved.boardSize);
+      for (const move of saved.moves) {
+        const next = placeStone(state, { row: move.row, col: move.col });
+        if (next) state = next;
+      }
+      setGameState(state);
+      setStateHistory([]);
+      const last = saved.moves[saved.moves.length - 1];
+      setLastMove(last ? { row: last.row, col: last.col } : null);
+      setMode('playing');
+    }
+
+    savedRef.current = false;
+    setHasSavedGame(false);
   };
 
   // ── 패스 ──
@@ -376,6 +459,11 @@ export default function Home() {
     setDeadStones(new Set());
     setStateHistory([]);
     setOmokHistory([]);
+    setHintPos(null);
+    setShowTerritory(false);
+    setLastPlacedAnim(null);
+    clearSave();
+    setHasSavedGame(false);
 
     if (gameType === 'baduk') {
       setGameState(createGame(boardSize));
@@ -578,6 +666,22 @@ export default function Home() {
               )}
             </div>
           </div>
+
+          {/* 이어하기 */}
+          {hasSavedGame && (
+            <button
+              onClick={handleContinueGame}
+              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600
+                         text-white font-bold text-sm shadow-lg shadow-amber-600/30
+                         active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              이어하기
+            </button>
+          )}
 
           {/* 돌 색 선택 & 시작 */}
           <div className="space-y-2">
@@ -822,6 +926,10 @@ export default function Home() {
           previewPos={previewPos}
           mode="play"
           confirmMode={confirmModeEnabled}
+          hintPos={hintPos}
+          showTerritory={showTerritory}
+          territoryMap={territoryMap}
+          lastPlacedAnim={lastPlacedAnim}
         />
 
         <GamePanel
@@ -837,7 +945,7 @@ export default function Home() {
           scoreInfo={scoreInfo}
         />
 
-        {/* 무르기 + 리플레이 버튼 */}
+        {/* 무르기 + 힌트 + 리플레이 */}
         <div className="flex gap-2">
           <button
             onClick={handleUndo}
@@ -847,6 +955,15 @@ export default function Home() {
                        disabled:opacity-40 disabled:cursor-not-allowed"
           >
             무르기
+          </button>
+          <button
+            onClick={handleHint}
+            disabled={isAIThinking || gameState.isGameOver || gameState.currentPlayer !== playerColor}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-blue-900/40 text-blue-400
+                       hover:bg-blue-900/60 active:scale-95 transition-all
+                       disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            힌트
           </button>
           {gameState.isGameOver && (
             <button
@@ -858,6 +975,32 @@ export default function Home() {
             </button>
           )}
         </div>
+
+        {/* 게임 내 도구 */}
+        {!gameState.isGameOver && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowTerritory(t => !t)}
+              className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all active:scale-95 ${
+                showTerritory
+                  ? 'bg-purple-600/30 text-purple-400 ring-1 ring-purple-500/30'
+                  : 'bg-gray-800/50 text-gray-500 hover:bg-gray-700/50'
+              }`}
+            >
+              {showTerritory ? '영역 숨기기' : '영역 보기'}
+            </button>
+            <button
+              onClick={() => setSoundEnabled(s => !s)}
+              className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all active:scale-95 ${
+                soundEnabled
+                  ? 'bg-gray-800/50 text-gray-400'
+                  : 'bg-gray-800/50 text-gray-600'
+              }`}
+            >
+              {soundEnabled ? '소리 ON' : '소리 OFF'}
+            </button>
+          </div>
+        )}
       </div>
     </main>
   );

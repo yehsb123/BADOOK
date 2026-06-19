@@ -16,9 +16,13 @@ interface GoBoardProps {
   deadStones?: Set<string>;
   mode?: BoardMode;
   confirmMode?: boolean;
-  replayMoveIndex?: number; // 리플레이 시 현재 수순
-  displayBoard?: Stone[][]; // 리플레이용 보드
-  winLine?: Position[] | null; // 오목 승리 라인
+  replayMoveIndex?: number;
+  displayBoard?: Stone[][];
+  winLine?: Position[] | null;
+  hintPos?: Position | null;
+  showTerritory?: boolean;
+  territoryMap?: ('black' | 'white' | null)[][];
+  lastPlacedAnim?: Position | null;
 }
 
 export default function GoBoard({
@@ -35,12 +39,29 @@ export default function GoBoard({
   replayMoveIndex,
   displayBoard,
   winLine,
+  hintPos,
+  showTerritory = false,
+  territoryMap,
+  lastPlacedAnim,
 }: GoBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const board = displayBoard || gameState.board;
   const { boardSize } = gameState;
   const [hoverPos, setHoverPos] = useState<Position | null>(null);
+  const [animScale, setAnimScale] = useState(1);
+
+  // 돌 놓기 애니메이션
+  useEffect(() => {
+    if (lastPlacedAnim) {
+      setAnimScale(1.3);
+      const t1 = setTimeout(() => setAnimScale(0.95), 60);
+      const t2 = setTimeout(() => setAnimScale(1), 120);
+      // 모바일 진동
+      if (navigator.vibrate) navigator.vibrate(15);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    }
+  }, [lastPlacedAnim]);
 
   const getCanvasSize = useCallback(() => {
     if (containerRef.current) {
@@ -253,7 +274,44 @@ export default function GoBoard({
       ctx.fill();
       ctx.globalAlpha = 1.0;
     }
-  }, [board, boardSize, lastMove, previewPos, deadStones, mode, confirmMode, hoverPos, getCanvasSize, gameState.currentPlayer, replayMoveIndex, winLine]);
+
+    // 영역 표시 (Territory visualization)
+    if (showTerritory && territoryMap) {
+      for (let r = 0; r < boardSize; r++) {
+        for (let c = 0; c < boardSize; c++) {
+          const owner = territoryMap[r][c];
+          if (!owner || board[r][c] !== null) continue;
+          const x = padding + c * cellSize;
+          const y = padding + r * cellSize;
+          ctx.globalAlpha = 0.35;
+          ctx.fillStyle = owner === 'black' ? '#333' : '#eee';
+          ctx.fillRect(x - cellSize * 0.2, y - cellSize * 0.2, cellSize * 0.4, cellSize * 0.4);
+          ctx.globalAlpha = 1.0;
+        }
+      }
+    }
+
+    // 힌트 표시
+    if (hintPos && mode === 'play') {
+      const x = padding + hintPos.col * cellSize;
+      const y = padding + hintPos.row * cellSize;
+      // 펄스 효과
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(x, y, stoneRadius + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // 중앙 점
+      ctx.fillStyle = '#3b82f6';
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.arc(x, y, cellSize * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+  }, [board, boardSize, lastMove, previewPos, deadStones, mode, confirmMode, hoverPos, getCanvasSize, gameState.currentPlayer, replayMoveIndex, winLine, hintPos, showTerritory, territoryMap, animScale, lastPlacedAnim]);
 
   useEffect(() => {
     draw();
