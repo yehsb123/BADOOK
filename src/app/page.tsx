@@ -568,7 +568,7 @@ export default function Home() {
           {/* 대국 기록 */}
           <button
             onClick={() => setMode('history')}
-            className="w-full py-3 rounded-xl bg-gray-800/60 hover:bg-gray-700/60
+            className="w-full mt-4 py-3 rounded-xl bg-gray-800/60 hover:bg-gray-700/60
                        border border-gray-700/30 transition-all active:scale-95
                        flex items-center justify-center gap-2"
           >
