@@ -151,8 +151,9 @@ export default function Home() {
       if (state.isGameOver) return;
       setIsAIThinking(true);
       // 사람처럼 고민하는 느낌: 기본 딜레이 + 랜덤 변동
-      const baseDelay = difficulty === 'hard' ? 1200 : difficulty === 'medium' ? 700 : 400;
-      const randomExtra = Math.floor(Math.random() * (difficulty === 'hard' ? 800 : 500));
+      // MCTS는 계산 자체에 시간이 걸리므로 딜레이는 최소한만
+      const baseDelay = difficulty === 'hard' ? 200 : difficulty === 'medium' ? 200 : 400;
+      const randomExtra = Math.floor(Math.random() * 300);
       const delay = baseDelay + randomExtra;
 
       aiTimeoutRef.current = setTimeout(() => {

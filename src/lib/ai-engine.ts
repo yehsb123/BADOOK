@@ -9,6 +9,7 @@ import {
   getAllValidMoves,
   placeStone,
 } from './game-engine';
+import { mctsSearch, getMCTSIterations } from './mcts';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -389,71 +390,31 @@ function getEasyMove(state: GameState, moves: Position[]): Position {
 }
 
 // 중: 평가 기반 + 소량 랜덤
+// 중: 가벼운 MCTS + 평가 함수
 function getMediumMove(state: GameState, moves: Position[]): Position {
+  const iterations = getMCTSIterations('medium', state.boardSize);
+  const mctsMove = mctsSearch(state, iterations);
+
+  if (mctsMove && Math.random() < 0.85) return mctsMove;
+
+  // 15% 확률로 평가 함수 기반 (약간의 변동성)
   const candidates = filterCandidates(state, moves, 30);
   const scored = candidates.map(m => ({ pos: m, score: evaluateMoveSimple(state, m) }));
   scored.sort((a, b) => b.score - a.score);
-
-  // 상위 3개 중 가중 랜덤
   const topN = scored.slice(0, Math.min(3, scored.length));
-  const totalScore = topN.reduce((s, m) => s + Math.max(m.score + 50, 1), 0);
-  let rand = Math.random() * totalScore;
-  for (const m of topN) {
-    rand -= Math.max(m.score + 50, 1);
-    if (rand <= 0) return m.pos;
-  }
-  return topN[0].pos;
+  return topN[Math.floor(Math.random() * topN.length)].pos;
 }
 
-// 상: 영향력 맵 + 미니맥스 3수
-function getHardMove(state: GameState, moves: Position[]): Position {
-  const candidates = filterCandidates(state, moves, 40);
+// 상: MCTS (몬테카를로 트리 탐색) - 가장 강력한 AI
+function getHardMove(state: GameState, _moves: Position[]): Position {
+  const iterations = getMCTSIterations('hard', state.boardSize);
+  const mctsMove = mctsSearch(state, iterations);
 
-  // 1차: 고급 평가로 상위 후보 선정
+  if (mctsMove) return mctsMove;
+
+  // MCTS 실패 시 폴백: 평가 함수 기반
+  const candidates = filterCandidates(state, _moves, 30);
   const scored = candidates.map(m => ({ pos: m, score: evaluateMoveAdvanced(state, m) }));
   scored.sort((a, b) => b.score - a.score);
-
-  const topCandidates = scored.slice(0, Math.min(15, scored.length));
-
-  let bestMove = topCandidates[0].pos;
-  let bestScore = -Infinity;
-
-  for (const candidate of topCandidates) {
-    const nextState = placeStone(state, candidate.pos);
-    if (!nextState) continue;
-
-    let moveScore = candidate.score * 1.5;
-
-    // 상대 최선수 시뮬레이션 (상위 8개)
-    const oppMoves = filterCandidates(nextState, getAllValidMoves(nextState), 20);
-    const oppScored = oppMoves
-      .slice(0, 8)
-      .map(m => ({ pos: m, score: evaluateMoveAdvanced(nextState, m) }));
-    oppScored.sort((a, b) => b.score - a.score);
-
-    if (oppScored.length > 0) {
-      // 상대 최선수로 인한 감점
-      moveScore -= oppScored[0].score * 0.7;
-
-      // 3수째: 상대가 최선수를 둔 후 내 반응
-      const oppBest = oppScored[0].pos;
-      const afterOpp = placeStone(nextState, oppBest);
-      if (afterOpp) {
-        const myFollow = filterCandidates(afterOpp, getAllValidMoves(afterOpp), 10);
-        const followScored = myFollow
-          .slice(0, 5)
-          .map(m => evaluateMoveAdvanced(afterOpp, m));
-        if (followScored.length > 0) {
-          moveScore += Math.max(...followScored) * 0.4;
-        }
-      }
-    }
-
-    if (moveScore > bestScore) {
-      bestScore = moveScore;
-      bestMove = candidate.pos;
-    }
-  }
-
-  return bestMove;
+  return scored[0].pos;
 }
