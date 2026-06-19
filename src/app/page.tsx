@@ -107,7 +107,10 @@ export default function Home() {
     (state: GameState) => {
       if (state.isGameOver) return;
       setIsAIThinking(true);
-      const delay = difficulty === 'hard' ? 800 : difficulty === 'medium' ? 500 : 300;
+      // 사람처럼 고민하는 느낌: 기본 딜레이 + 랜덤 변동
+      const baseDelay = difficulty === 'hard' ? 1200 : difficulty === 'medium' ? 700 : 400;
+      const randomExtra = Math.floor(Math.random() * (difficulty === 'hard' ? 800 : 500));
+      const delay = baseDelay + randomExtra;
 
       aiTimeoutRef.current = setTimeout(() => {
         const aiPos = getAIMove(state, difficulty);
@@ -158,7 +161,8 @@ export default function Home() {
       !isAIThinking
     ) {
       setIsAIThinking(true);
-      const delay = difficulty === 'hard' ? 600 : difficulty === 'medium' ? 400 : 200;
+      const baseDelay = difficulty === 'hard' ? 900 : difficulty === 'medium' ? 500 : 250;
+      const delay = baseDelay + Math.floor(Math.random() * 500);
 
       aiTimeoutRef.current = setTimeout(() => {
         const aiPos = getOmokAIMove(omokState, difficulty);
@@ -169,13 +173,34 @@ export default function Home() {
             setOmokHistory(prev => [...prev, omokState]);
             setOmokState(newState);
             setLastMove(aiPos);
-            if (newState.isGameOver && soundEnabled) playGameEndSound();
+            if (newState.isGameOver) {
+              if (soundEnabled) playGameEndSound();
+            }
           }
         }
         setIsAIThinking(false);
       }, delay);
     }
   }, [omokState, playerColor, isAIThinking, mode, difficulty, gameType, soundEnabled]);
+
+  // ── 오목 종료 시 기록 저장 ──
+  const omokSavedRef = useRef(false);
+  useEffect(() => {
+    if (omokState.isGameOver && !omokSavedRef.current && gameType === 'omok') {
+      omokSavedRef.current = true;
+      const playerWon = omokState.winner === playerColor;
+      const isDraw = omokState.winner === null;
+      saveRecord({
+        boardSize: omokState.boardSize,
+        difficulty,
+        playerColor: playerColor!,
+        result: isDraw ? 'draw' : playerWon ? 'win' : 'lose',
+        blackScore: 0,
+        whiteScore: 0,
+        moveCount: omokState.moveHistory.length,
+      });
+    }
+  }, [omokState.isGameOver, omokState, playerColor, difficulty, gameType]);
 
   useEffect(() => {
     return () => { if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current); };
@@ -330,6 +355,7 @@ export default function Home() {
     setLastMove(null);
     setIsAIThinking(false);
     savedRef.current = false;
+    omokSavedRef.current = false;
     setPreviewPos(null);
     setDeadStones(new Set());
     setStateHistory([]);
@@ -398,19 +424,20 @@ export default function Home() {
   // ── 메인 메뉴 ──
   if (mode === 'menu') {
     return (
-      <main className="min-h-dvh bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 flex flex-col items-center justify-center px-4 py-8">
-        <div className="w-full max-w-sm space-y-5">
+      <main className="min-h-dvh relative flex flex-col items-center justify-center px-4 py-8">
+        {/* 배경 이미지 */}
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: 'url(/hero.png)' }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/80" />
+
+        <div className="relative z-10 w-full max-w-sm space-y-5">
           {/* 로고 */}
           <div className="text-center space-y-2">
-            <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-amber-700 to-amber-900 flex items-center justify-center shadow-2xl shadow-amber-900/30">
-              <div className="grid grid-cols-3 gap-1">
-                {[0,1,2,3,4,5,6,7,8].map(i => (
-                  <div key={i} className={`w-3 h-3 rounded-full shadow-inner ${i % 2 === 0 ? 'bg-black' : 'bg-white'}`} />
-                ))}
-              </div>
-            </div>
-            <h1 className="text-2xl font-black text-white tracking-tight">성빈이와 바둑하기</h1>
-            <p className="text-gray-500 text-sm">표준 규칙 기반 AI 대국</p>
+            <img src="/icon-512.png" alt="로고" className="w-20 h-20 mx-auto rounded-2xl shadow-2xl" />
+            <h1 className="text-2xl font-black text-white tracking-tight drop-shadow-lg">성빈이와 바둑하기</h1>
+            <p className="text-gray-300 text-sm drop-shadow">표준 규칙 기반 AI 대국</p>
           </div>
 
           {/* 게임 종류 */}
@@ -579,7 +606,7 @@ export default function Home() {
           </button>
         </div>
 
-        <footer className="mt-6 text-gray-700 text-[10px]">
+        <footer className="relative z-10 mt-6 text-gray-400 text-[10px]">
           표준 바둑 규칙 (한국기원) 적용
         </footer>
       </main>
