@@ -265,6 +265,56 @@ export function calculateScore(state: GameState): {
   return { blackTerritory, whiteTerritory, blackScore, whiteScore, winner };
 }
 
+// 사석 제거 후 점수 재계산
+export function removeDeadStones(state: GameState, deadPositions: Position[]): GameState {
+  const newBoard = cloneBoard(state.board);
+  let extraBlackCaptures = 0;
+  let extraWhiteCaptures = 0;
+
+  for (const pos of deadPositions) {
+    const stone = newBoard[pos.row][pos.col];
+    if (stone === 'black') extraWhiteCaptures++;
+    else if (stone === 'white') extraBlackCaptures++;
+    newBoard[pos.row][pos.col] = null;
+  }
+
+  return {
+    ...state,
+    board: newBoard,
+    capturedByBlack: state.capturedByBlack + extraBlackCaptures,
+    capturedByWhite: state.capturedByWhite + extraWhiteCaptures,
+  };
+}
+
+// 그룹 내 모든 돌 위치 (사석 클릭 시 그룹 전체 선택용)
+export function getGroupAt(board: Stone[][], pos: Position): Position[] {
+  const color = board[pos.row][pos.col];
+  if (!color) return [];
+
+  const size = board.length;
+  const visited = new Set<string>();
+  const stones: Position[] = [];
+  const queue: Position[] = [pos];
+
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    const key = `${current.row},${current.col}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+
+    if (board[current.row][current.col] === color) {
+      stones.push(current);
+      for (const neighbor of getNeighbors(current, size)) {
+        const nKey = `${neighbor.row},${neighbor.col}`;
+        if (board[neighbor.row][neighbor.col] === color && !visited.has(nKey)) {
+          queue.push(neighbor);
+        }
+      }
+    }
+  }
+  return stones;
+}
+
 // 모든 유효한 수 목록
 export function getAllValidMoves(state: GameState): Position[] {
   const moves: Position[] = [];

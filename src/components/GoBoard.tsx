@@ -1,18 +1,44 @@
 'use client';
 
-import React, { useRef, useEffect, useCallback } from 'react';
-import { GameState, Position, isValidMove } from '@/lib/game-engine';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { GameState, Position, Stone, isValidMove } from '@/lib/game-engine';
+
+export type BoardMode = 'play' | 'dead-stone' | 'replay';
 
 interface GoBoardProps {
   gameState: GameState;
   onPlaceStone: (pos: Position) => void;
+  onConfirmMove?: () => void;
+  onCancelMove?: () => void;
+  onToggleDeadStone?: (pos: Position) => void;
   lastMove: Position | null;
+  previewPos?: Position | null;
+  deadStones?: Set<string>;
+  mode?: BoardMode;
+  confirmMode?: boolean;
+  replayMoveIndex?: number; // 리플레이 시 현재 수순
+  displayBoard?: Stone[][]; // 리플레이용 보드
 }
 
-export default function GoBoard({ gameState, onPlaceStone, lastMove }: GoBoardProps) {
+export default function GoBoard({
+  gameState,
+  onPlaceStone,
+  onConfirmMove,
+  onCancelMove,
+  onToggleDeadStone,
+  lastMove,
+  previewPos = null,
+  deadStones,
+  mode = 'play',
+  confirmMode = false,
+  replayMoveIndex,
+  displayBoard,
+}: GoBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { board, boardSize } = gameState;
+  const board = displayBoard || gameState.board;
+  const { boardSize } = gameState;
+  const [hoverPos, setHoverPos] = useState<Position | null>(null);
 
   const getCanvasSize = useCallback(() => {
     if (containerRef.current) {
@@ -29,11 +55,12 @@ export default function GoBoard({ gameState, onPlaceStone, lastMove }: GoBoardPr
     if (!ctx) return;
 
     const size = getCanvasSize();
-    canvas.width = size * (window.devicePixelRatio || 1);
-    canvas.height = size * (window.devicePixelRatio || 1);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
     canvas.style.width = `${size}px`;
     canvas.style.height = `${size}px`;
-    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+    ctx.scale(dpr, dpr);
 
     const padding = size * 0.05;
     const cellSize = (size - padding * 2) / (boardSize - 1);
@@ -43,12 +70,13 @@ export default function GoBoard({ gameState, onPlaceStone, lastMove }: GoBoardPr
     ctx.fillStyle = '#DCB35C';
     ctx.fillRect(0, 0, size, size);
 
-    // 나무결 효과
-    ctx.strokeStyle = 'rgba(139, 90, 43, 0.1)';
+    // 나무결
+    ctx.strokeStyle = 'rgba(139, 90, 43, 0.08)';
+    ctx.lineWidth = 0.5;
     for (let i = 0; i < size; i += 3) {
       ctx.beginPath();
       ctx.moveTo(0, i);
-      ctx.lineTo(size, i + (Math.random() - 0.5) * 4);
+      ctx.lineTo(size, i + (Math.sin(i * 0.1) * 2));
       ctx.stroke();
     }
 
@@ -57,19 +85,17 @@ export default function GoBoard({ gameState, onPlaceStone, lastMove }: GoBoardPr
     ctx.lineWidth = 0.8;
     for (let i = 0; i < boardSize; i++) {
       const pos = padding + i * cellSize;
-      // 가로선
       ctx.beginPath();
       ctx.moveTo(padding, pos);
       ctx.lineTo(size - padding, pos);
       ctx.stroke();
-      // 세로선
       ctx.beginPath();
       ctx.moveTo(pos, padding);
       ctx.lineTo(pos, size - padding);
       ctx.stroke();
     }
 
-    // 화점 (星)
+    // 화점
     const starPoints = getStarPoints(boardSize);
     ctx.fillStyle = '#1a1a1a';
     for (const sp of starPoints) {
@@ -80,20 +106,18 @@ export default function GoBoard({ gameState, onPlaceStone, lastMove }: GoBoardPr
       ctx.fill();
     }
 
-    // 좌표 레이블
+    // 좌표
     ctx.fillStyle = '#5a3a1a';
     ctx.font = `${Math.max(9, cellSize * 0.35)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const letters = 'ABCDEFGHJKLMNOPQRST'; // I 제외 (바둑 관례)
+    const letters = 'ABCDEFGHJKLMNOPQRST';
     for (let i = 0; i < boardSize; i++) {
-      // 상단
       ctx.fillText(letters[i], padding + i * cellSize, padding * 0.4);
-      // 좌측
       ctx.fillText(`${boardSize - i}`, padding * 0.35, padding + i * cellSize);
     }
 
-    // 돌
+    // 돌 그리기
     for (let r = 0; r < boardSize; r++) {
       for (let c = 0; c < boardSize; c++) {
         const stone = board[r][c];
@@ -101,6 +125,7 @@ export default function GoBoard({ gameState, onPlaceStone, lastMove }: GoBoardPr
 
         const x = padding + c * cellSize;
         const y = padding + r * cellSize;
+        const isDead = deadStones?.has(`${r},${c}`);
 
         // 그림자
         ctx.beginPath();
@@ -130,17 +155,89 @@ export default function GoBoard({ gameState, onPlaceStone, lastMove }: GoBoardPr
         ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
         ctx.fill();
 
+        // 사석 표시 (X 마크)
+        if (isDead) {
+          ctx.strokeStyle = stone === 'black' ? '#ff6666' : '#ff4444';
+          ctx.lineWidth = 2.5;
+          const m = stoneRadius * 0.45;
+          ctx.beginPath();
+          ctx.moveTo(x - m, y - m);
+          ctx.lineTo(x + m, y + m);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x + m, y - m);
+          ctx.lineTo(x - m, y + m);
+          ctx.stroke();
+          // 반투명 오버레이
+          ctx.beginPath();
+          ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255,0,0,0.15)';
+          ctx.fill();
+        }
+
         // 마지막 수 표시
-        if (lastMove && lastMove.row === r && lastMove.col === c) {
-          ctx.strokeStyle = stone === 'black' ? '#ff4444' : '#ff4444';
+        if (lastMove && lastMove.row === r && lastMove.col === c && !isDead) {
+          ctx.strokeStyle = '#ff4444';
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.arc(x, y, stoneRadius * 0.45, 0, Math.PI * 2);
           ctx.stroke();
         }
+
+        // 리플레이 수순 번호
+        if (mode === 'replay' && replayMoveIndex !== undefined) {
+          // 마지막 놓인 돌에만 번호 표시
+          if (lastMove && lastMove.row === r && lastMove.col === c) {
+            ctx.fillStyle = stone === 'black' ? '#fff' : '#000';
+            ctx.font = `bold ${Math.max(10, cellSize * 0.38)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${replayMoveIndex}`, x, y);
+          }
+        }
       }
     }
-  }, [board, boardSize, lastMove, getCanvasSize]);
+
+    // 미리보기 돌 (반투명)
+    if (previewPos && mode === 'play') {
+      const x = padding + previewPos.col * cellSize;
+      const y = padding + previewPos.row * cellSize;
+
+      ctx.globalAlpha = 0.5;
+      if (gameState.currentPlayer === 'black') {
+        ctx.fillStyle = '#333';
+      } else {
+        ctx.fillStyle = '#ddd';
+      }
+      ctx.beginPath();
+      ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // 확인 테두리
+      if (confirmMode) {
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.arc(x, y, stoneRadius + 3, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // 호버 표시 (PC)
+    if (hoverPos && !previewPos && mode === 'play' && !board[hoverPos.row]?.[hoverPos.col]) {
+      const x = padding + hoverPos.col * cellSize;
+      const y = padding + hoverPos.row * cellSize;
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = gameState.currentPlayer === 'black' ? '#333' : '#ddd';
+      ctx.beginPath();
+      ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+  }, [board, boardSize, lastMove, previewPos, deadStones, mode, confirmMode, hoverPos, getCanvasSize, gameState.currentPlayer, replayMoveIndex]);
 
   useEffect(() => {
     draw();
@@ -149,61 +246,95 @@ export default function GoBoard({ gameState, onPlaceStone, lastMove }: GoBoardPr
     return () => window.removeEventListener('resize', handleResize);
   }, [draw]);
 
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const getPosFromEvent = (clientX: number, clientY: number): Position | null => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     const size = getCanvasSize();
     const padding = size * 0.05;
     const cellSize = (size - padding * 2) / (boardSize - 1);
-
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
     const col = Math.round((x - padding) / cellSize);
     const row = Math.round((y - padding) / cellSize);
-
     if (row >= 0 && row < boardSize && col >= 0 && col < boardSize) {
-      if (isValidMove(gameState, { row, col })) {
-        onPlaceStone({ row, col });
+      return { row, col };
+    }
+    return null;
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const pos = getPosFromEvent(e.clientX, e.clientY);
+    if (!pos) return;
+
+    if (mode === 'dead-stone') {
+      onToggleDeadStone?.(pos);
+      return;
+    }
+
+    if (mode === 'play') {
+      if (isValidMove(gameState, pos)) {
+        onPlaceStone(pos);
       }
     }
   };
 
   const handleTouch = (e: React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const size = getCanvasSize();
-    const padding = size * 0.05;
-    const cellSize = (size - padding * 2) / (boardSize - 1);
-
     const touch = e.changedTouches[0];
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
+    const pos = getPosFromEvent(touch.clientX, touch.clientY);
+    if (!pos) return;
 
-    const col = Math.round((x - padding) / cellSize);
-    const row = Math.round((y - padding) / cellSize);
+    if (mode === 'dead-stone') {
+      onToggleDeadStone?.(pos);
+      return;
+    }
 
-    if (row >= 0 && row < boardSize && col >= 0 && col < boardSize) {
-      if (isValidMove(gameState, { row, col })) {
-        onPlaceStone({ row, col });
+    if (mode === 'play') {
+      if (isValidMove(gameState, pos)) {
+        onPlaceStone(pos);
       }
     }
   };
 
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (mode !== 'play') { setHoverPos(null); return; }
+    const pos = getPosFromEvent(e.clientX, e.clientY);
+    setHoverPos(pos);
+  };
+
+  const handleMouseLeave = () => setHoverPos(null);
+
   return (
-    <div ref={containerRef} className="w-full flex justify-center">
+    <div ref={containerRef} className="w-full flex flex-col items-center gap-2">
       <canvas
         ref={canvasRef}
         onClick={handleClick}
         onTouchEnd={handleTouch}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
         className="cursor-pointer rounded-lg shadow-lg"
         style={{ touchAction: 'none' }}
       />
+      {/* 착수 확인 버튼 */}
+      {confirmMode && previewPos && (
+        <div className="flex gap-2 w-full max-w-[300px]">
+          <button
+            onClick={onConfirmMove}
+            className="flex-1 py-2 rounded-xl bg-emerald-600 text-white font-bold text-sm
+                       active:scale-95 transition-all shadow-lg shadow-emerald-600/30"
+          >
+            착수 확인
+          </button>
+          <button
+            onClick={onCancelMove}
+            className="flex-1 py-2 rounded-xl bg-gray-700 text-gray-300 font-bold text-sm
+                       active:scale-95 transition-all"
+          >
+            취소
+          </button>
+        </div>
+      )}
     </div>
   );
 }
