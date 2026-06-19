@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import GoBoard from '@/components/GoBoard';
 import GamePanel from '@/components/GamePanel';
+import GameHistory from '@/components/GameHistory';
 import {
   GameState,
   Position,
@@ -13,8 +14,9 @@ import {
   calculateScore,
 } from '@/lib/game-engine';
 import { Difficulty, getAIMove } from '@/lib/ai-engine';
+import { saveRecord, getStats } from '@/lib/history';
 
-type GameMode = 'menu' | 'playing';
+type GameMode = 'menu' | 'playing' | 'history';
 
 export default function Home() {
   const [mode, setMode] = useState<GameMode>('menu');
@@ -27,12 +29,30 @@ export default function Home() {
   const [lastMove, setLastMove] = useState<Position | null>(null);
   const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 게임 종료 시 점수 계산
+  // 게임 종료 시 점수 계산 + 기록 저장
+  const savedRef = useRef(false);
   useEffect(() => {
-    if (gameState.isGameOver) {
-      setScoreInfo(calculateScore(gameState));
+    if (gameState.isGameOver && !savedRef.current) {
+      const score = calculateScore(gameState);
+      setScoreInfo(score);
+      savedRef.current = true;
+
+      const playerWon =
+        (playerColor === 'black' && score.blackScore > score.whiteScore) ||
+        (playerColor === 'white' && score.whiteScore > score.blackScore);
+      const isDraw = score.blackScore === score.whiteScore;
+
+      saveRecord({
+        boardSize: gameState.boardSize,
+        difficulty,
+        playerColor: playerColor!,
+        result: isDraw ? 'draw' : playerWon ? 'win' : 'lose',
+        blackScore: score.blackScore,
+        whiteScore: score.whiteScore,
+        moveCount: gameState.moveHistory.length,
+      });
     }
-  }, [gameState.isGameOver, gameState]);
+  }, [gameState.isGameOver, gameState, playerColor, difficulty]);
 
   // AI 차례 처리
   const doAIMove = useCallback(
@@ -108,6 +128,7 @@ export default function Home() {
     setScoreInfo(null);
     setLastMove(null);
     setIsAIThinking(false);
+    savedRef.current = false;
     setMode('playing');
   };
 
@@ -133,6 +154,11 @@ export default function Home() {
   const handleDifficultyChange = (d: Difficulty) => {
     setDifficulty(d);
   };
+
+  // ── 기록 화면 ──
+  if (mode === 'history') {
+    return <GameHistory onClose={() => setMode('menu')} />;
+  }
 
   // ── 메인 메뉴 ──
   if (mode === 'menu') {
@@ -245,6 +271,19 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+          {/* 대국 기록 버튼 */}
+          <button
+            onClick={() => setMode('history')}
+            className="w-full py-3 rounded-xl bg-gray-800/60 hover:bg-gray-700/60
+                       border border-gray-700/30 transition-all active:scale-95
+                       flex items-center justify-center gap-2"
+          >
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span className="text-gray-300 font-semibold text-sm">대국 기록</span>
+          </button>
 
         <footer className="mt-8 text-gray-700 text-[10px]">
           표준 바둑 규칙 (한국기원) 적용
