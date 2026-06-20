@@ -10,7 +10,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "@types/pako": "^2.0.4",
     "next": "16.2.9",
+    "pako": "^2.1.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
