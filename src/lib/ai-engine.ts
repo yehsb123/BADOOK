@@ -302,13 +302,20 @@ function getCandidates(state: GameState, maxCount: number): Position[] {
   const all = getAllValidMoves(state);
   if (all.length === 0) return [];
 
-  // 초반: 3/4선
+  // 초반: 화점 우선 (랜덤 섞기)
   if (state.moveHistory.length < 6) {
+    const stars = getStarPoints(boardSize).filter(s => board[s.row][s.col] === null);
     const opening = all.filter(m => {
       const d = Math.min(m.row, m.col, boardSize - 1 - m.row, boardSize - 1 - m.col);
       return d >= 2 && d <= 4;
     });
-    if (opening.length > 0) return opening.slice(0, maxCount);
+    // 랜덤 섞기
+    const shuffled = [...(stars.length > 0 ? stars : opening)];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    if (shuffled.length > 0) return shuffled.slice(0, maxCount);
   }
 
   // 돌 근처(3칸)만

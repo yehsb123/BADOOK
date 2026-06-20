@@ -479,7 +479,11 @@ export default function Home() {
       setKataGoStatus('loading');
       initKataGo().then(ok => {
         setKataGoStatus(ok ? 'ready' : 'failed');
-      }).catch(() => setKataGoStatus('failed'));
+        if (!ok) console.warn('[KataGo] 로딩 실패 - 기본 AI 사용');
+      }).catch((err) => {
+        setKataGoStatus('failed');
+        console.error('[KataGo] 로딩 에러:', err);
+      });
     }
 
     if (gameType === 'baduk') {
