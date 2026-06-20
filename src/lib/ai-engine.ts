@@ -9,6 +9,7 @@ import {
   getAllValidMoves,
   placeStone,
 } from './game-engine';
+import { isKataGoReady, getKataGoMove } from './katago-bridge';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -335,6 +336,31 @@ export function getAIMove(state: GameState, difficulty: Difficulty): Position | 
     case 'medium': return mediumMove(state);
     case 'hard': return hardMove(state);
   }
+}
+
+// KataGo 신경망 사용 (async) - 모든 난이도에서 사용
+export async function getAIMoveAsync(state: GameState, difficulty: Difficulty): Promise<Position | null> {
+  if (isKataGoReady()) {
+    try {
+      const kataMove = await getKataGoMove(state);
+      if (kataMove) {
+        // 하 난이도: 50% 확률로 KataGo, 50% 랜덤
+        if (difficulty === 'easy' && Math.random() < 0.5) {
+          return getAIMove(state, 'easy');
+        }
+        // 중 난이도: 20% 확률로 기존 AI (약간의 실수)
+        if (difficulty === 'medium' && Math.random() < 0.2) {
+          return getAIMove(state, 'medium');
+        }
+        return kataMove;
+      }
+    } catch {
+      // KataGo 실패 시 폴백
+    }
+  }
+
+  // 폴백: 기존 평가함수 AI
+  return getAIMove(state, difficulty);
 }
 
 // 하: 40% 전략, 60% 랜덤

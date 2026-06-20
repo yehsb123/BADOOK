@@ -23,7 +23,8 @@ import {
   isValidOmokMove,
   getOmokAIMove,
 } from '@/lib/omok-engine';
-import { Difficulty, getAIMove } from '@/lib/ai-engine';
+import { Difficulty, getAIMove, getAIMoveAsync } from '@/lib/ai-engine';
+import { initKataGo, isKataGoReady, isKataGoLoading } from '@/lib/katago-bridge';
 import { saveRecord } from '@/lib/history';
 import { playPlaceSound, playCaptureSound, playPassSound, playGameEndSound, playTimerWarningSound } from '@/lib/sounds';
 import { estimateTerritory } from '@/lib/territory';
@@ -42,6 +43,7 @@ export default function Home() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [confirmModeEnabled, setConfirmModeEnabled] = useState(false);
   const [gameType, setGameType] = useState<'baduk' | 'omok'>('baduk');
+  const [kataGoStatus, setKataGoStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
   const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const savedRef = useRef(false);
 
@@ -150,14 +152,19 @@ export default function Home() {
     (state: GameState) => {
       if (state.isGameOver) return;
       setIsAIThinking(true);
-      // 사람처럼 고민하는 느낌: 기본 딜레이 + 랜덤 변동
-      // MCTS는 계산 자체에 시간이 걸리므로 딜레이는 최소한만
-      const baseDelay = difficulty === 'hard' ? 200 : difficulty === 'medium' ? 200 : 400;
-      const randomExtra = Math.floor(Math.random() * 300);
-      const delay = baseDelay + randomExtra;
 
-      aiTimeoutRef.current = setTimeout(() => {
-        const aiPos = getAIMove(state, difficulty);
+      const baseDelay = difficulty === 'hard' ? 100 : difficulty === 'medium' ? 200 : 400;
+      const delay = baseDelay + Math.floor(Math.random() * 300);
+
+      aiTimeoutRef.current = setTimeout(async () => {
+        // KataGo 사용 가능하면 async, 아니면 동기
+        let aiPos: Position | null = null;
+        try {
+          aiPos = await getAIMoveAsync(state, difficulty);
+        } catch {
+          aiPos = getAIMove(state, difficulty);
+        }
+
         if (aiPos) {
           const newState = placeStone(state, aiPos);
           if (newState) {
@@ -171,6 +178,7 @@ export default function Home() {
             setStateHistory(prev => [...prev, state]);
             setGameState(newState);
             setLastMove(aiPos);
+            setLastPlacedAnim(aiPos);
           } else {
             if (soundEnabled) playPassSound();
             setGameState(pass(state));
@@ -465,6 +473,14 @@ export default function Home() {
     setLastPlacedAnim(null);
     clearSave();
     setHasSavedGame(false);
+
+    // KataGo 로딩 시작 (백그라운드)
+    if (gameType === 'baduk' && kataGoStatus === 'idle') {
+      setKataGoStatus('loading');
+      initKataGo().then(ok => {
+        setKataGoStatus(ok ? 'ready' : 'failed');
+      }).catch(() => setKataGoStatus('failed'));
+    }
 
     if (gameType === 'baduk') {
       setGameState(createGame(boardSize));
@@ -891,8 +907,16 @@ export default function Home() {
             메뉴
           </button>
           <h1 className="text-white font-bold text-base">바둑 {boardSize}x{boardSize}</h1>
-          <div className="text-gray-600 text-xs">
-            {difficulty === 'easy' ? '하' : difficulty === 'medium' ? '중' : '상'}
+          <div className="text-xs">
+            <span className="text-gray-600">
+              {difficulty === 'easy' ? '하' : difficulty === 'medium' ? '중' : '상'}
+            </span>
+            {kataGoStatus === 'loading' && (
+              <span className="text-blue-400 ml-1 animate-pulse">AI 로딩...</span>
+            )}
+            {kataGoStatus === 'ready' && (
+              <span className="text-emerald-400 ml-1">KataGo</span>
+            )}
           </div>
         </div>
 
