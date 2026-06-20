@@ -917,6 +917,9 @@ export default function Home() {
             {kataGoStatus === 'ready' && (
               <span className="text-emerald-400 ml-1">KataGo</span>
             )}
+            {kataGoStatus === 'failed' && (
+              <span className="text-gray-500 ml-1">기본 AI</span>
+            )}
           </div>
         </div>
 

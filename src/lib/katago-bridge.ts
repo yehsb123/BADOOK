@@ -57,18 +57,21 @@ export async function initKataGo(): Promise<boolean> {
     await tf.ready();
 
     // 모델 로드
-    const pako = await import('pako');
+    const pakoModule = await import('pako');
+    const inflate = pakoModule.inflate || pakoModule.default?.inflate;
+    if (!inflate) throw new Error('pako inflate not found');
+
     const res = await fetch('/models/katago-small.bin.gz');
-    if (!res.ok) throw new Error('Model fetch failed');
+    if (!res.ok) throw new Error(`Model fetch failed: ${res.status}`);
 
     const compressed = new Uint8Array(await res.arrayBuffer());
     let data: Uint8Array;
-    // gzip 여부 체크
     if (compressed[0] === 0x1f && compressed[1] === 0x8b) {
-      data = pako.inflate(compressed);
+      data = inflate(compressed);
     } else {
       data = compressed;
     }
+    console.log('[KataGo] Model loaded, size:', data.length);
 
     // KataGo 모델 파싱 + TF.js 모델 생성
     const { parseKataGoModelV8 } = await import('./katago/loadModelV8');
@@ -235,7 +238,8 @@ export async function initKataGo(): Promise<boolean> {
     loading = false;
     return true;
   } catch (err) {
-    console.error('KataGo init failed:', err);
+    console.error('[KataGo] Init failed:', err);
+    console.error('[KataGo] Error details:', String(err));
     loading = false;
     return false;
   }
