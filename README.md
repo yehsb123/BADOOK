@@ -2,7 +2,7 @@
   <img src="public/icon-512.png" width="120" alt="성빈이와 바둑하기" />
 </p>
 
-<h1 align="center">성빈이와 바둑하기</h1>
+<h1 align="center">AI와 바둑하기</h1>
 
 <p align="center">
   <strong>표준 바둑 규칙 기반 모바일 AI 대국 앱</strong><br/>
